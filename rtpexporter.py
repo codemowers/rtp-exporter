@@ -15,14 +15,19 @@ seq = Counter()
 drops = Counter()
 timestamp = Counter()
 
+garbage_collects = 0
 cycles = 0
 
 def gc(now):
+    global cycles
+    cycles = 0
+    global garbage_collects
+    garbage_collects += 1
     for key, value in tuple(timestamp.items()):
         if value < now - 60:
+            seq.pop(key, None)
             markers.pop(key, None)
             bandwidth.pop(key, None)
-            seq.pop(key, None)
             drops.pop(key, None)
             timestamp.pop(key, None)
 
@@ -50,37 +55,43 @@ def packet_handler(packet):
     val = seq[key]
     if val + 1 < rtp_pkt.sequence: # at least one packet was lost
         drops[key] += rtp_pkt.sequence - val - 1
-    seq[key] = rtp_pkt.sequence
     if rtp_pkt.marker:
         markers[key] += 1
     bandwidth[key] += len(r)
-
     now = time()
     timestamp[key] = now
+    seq[key] = rtp_pkt.sequence
+
     cycles += 1
     if cycles > 10000:
         gc(now)
 
 def build_metrics():
     gc(time())
-    yield "rtp_stream_count", "counter", len(seq), {}
-    for key, value in seq.items():
+    yield "rtp_exporter_garbage_collect_count", "counter", garbage_collects, {}
+    yield "rtp_exporter_stream_count", "counter", len(seq), {}
+    for key, value in tuple(seq.items()):
         src, sport, dst, dport, sourcesync, payload_type = key
         labels = {
             "src": src,
             "dst": dst,
-            "ssrc":hex(sourcesync)[2:],
+            "ssrc":"%08x" % sourcesync,
             "payload":payload_type,
             "sport":sport,
             "dport":dport
         }
-        yield "rtp_stream_packet_count", "counter", value, labels
-        yield "rtp_stream_marker_count", "counter", markers[key], labels
-        yield "rtp_stream_bandwidth_bytes_count", "counter", bandwidth[key], labels
-        yield "rtp_stream_last_packet_timestamp_seconds", "counter", timestamp[key], labels
+        yield "rtp_exporter_stream_packet_count", "counter", value, labels
+        yield "rtp_exporter_stream_packets_lost_count", "counter", drops[key], labels
+        yield "rtp_exporter_stream_marker_count", "counter", markers[key], labels
+        yield "rtp_exporter_stream_bandwidth_bytes_count", "counter", bandwidth[key], labels
+        yield "rtp_exporter_stream_last_packet_timestamp_seconds", "counter", timestamp[key], labels
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path != "/metrics":
+            self.send_response(200)
+            self.end_headers()
+            return
         metrics_seen = set()
         buf = ""
         for name, tp, value, labels in build_metrics():
