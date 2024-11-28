@@ -18,7 +18,7 @@ timestamp = Counter()
 cycles = 0
 
 def gc(now):
-    for key, value in timestamp.items():
+    for key, value in tuple(timestamp.items()):
         if value < now - 60:
             markers.pop(key, None)
             bandwidth.pop(key, None)
