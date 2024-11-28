@@ -74,7 +74,7 @@ def build_metrics():
         }
         yield "rtp_stream_packet_count", "counter", value, labels
         yield "rtp_stream_marker_count", "counter", markers[key], labels
-        yield "rtp_stream_bandwidth_bytes", "counter", bandwidth[key], labels
+        yield "rtp_stream_bandwidth_bytes_count", "counter", bandwidth[key], labels
         yield "rtp_stream_last_packet_timestamp_seconds", "counter", timestamp[key], labels
 
 class Handler(BaseHTTPRequestHandler):
@@ -102,8 +102,10 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--interface', default="eth0")
 parser.add_argument('--listen-address', default="0.0.0.0")
 parser.add_argument('--listen-port', type=int, default=5544)
-parser.add_argument('--min-port', type=int, default=16384)
-parser.add_argument('--max-port', type=int, default=32768)
+parser.add_argument('--rtp-port-min', type=int, default=16384)
+parser.add_argument('--rtp-port-max', type=int, default=32768)
+parser.add_argument('--ephemeral-port-min', type=int, default=32768)
+parser.add_argument('--ephemeral-port-max', type=int, default=65535)
 args = parser.parse_args()
 
 httpd = HTTPServer((args.listen_address, args.listen_port), Handler)
@@ -111,7 +113,7 @@ thread = Thread(target=httpd.serve_forever)
 thread.daemon = False
 thread.start()
 
-flt = "udp portrange %d-%d" % (args.min_port, args.max_port)
+flt = "(dst portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d) or (src portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d)" % vars(args)
 print("Using packet capture filter:", flt)
 print("Snooping packets on:", args.interface)
 sniff(filter=flt, iface=args.interface, prn=packet_handler)
