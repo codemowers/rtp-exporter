@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# gst-launch-1.0 --gst-debug-level=2 videotestsrc ! capsfilter caps="video/x-raw,width=1920,height=1080,framerate=25/1" ! videoconvert ! x264enc ! rtph264pay pt=96 ! capsfilter name=videofilter caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! udpsink host=1.2.3.4 port=38000
+# gst-launch-1.0 --gst-debug-level=2 videotestsrc ! capsfilter caps="video/x-raw,width=1920,height=1080,framerate=25/1" ! videoconvert ! x264enc ! rtph264pay pt=96 ! capsfilter name=videofilter caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! udpsink host=1.2.3.4 port=32000
 import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
@@ -52,9 +52,11 @@ def packet_handler(packet):
 
     key = ip_pkt.src, udp_pkt.sport, ip_pkt.dst, udp_pkt.dport, rtp_pkt.sourcesync, rtp_pkt.payload_type
 
-    val = seq[key]
-    if val + 1 < rtp_pkt.sequence: # at least one packet was lost
-        drops[key] += rtp_pkt.sequence - val - 1
+    if key in seq:
+        last_seq = seq[key]
+        if last_seq + 1 < rtp_pkt.sequence: # at least one packet was lost
+            drops[key] += rtp_pkt.sequence - last_seq - 1
+
     if rtp_pkt.marker:
         markers[key] += 1
     bandwidth[key] += len(r)
