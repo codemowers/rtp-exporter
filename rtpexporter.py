@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# gst-launch-1.0 --gst-debug-level=2 videotestsrc ! capsfilter caps="video/x-raw,width=1920,height=1080,framerate=25/1" ! videoconvert ! x264enc ! rtph264pay pt=96 ! capsfilter name=videofilter caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! udpsink host=1.2.3.4 port=5000
+# gst-launch-1.0 --gst-debug-level=2 videotestsrc ! capsfilter caps="video/x-raw,width=1920,height=1080,framerate=25/1" ! videoconvert ! x264enc ! rtph264pay pt=96 ! capsfilter name=videofilter caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! udpsink host=1.2.3.4 port=38000
 import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
@@ -28,6 +28,8 @@ def gc(now):
 
 def packet_handler(packet):
     global cycles
+    if not packet.haslayer(IP):
+        return
     ip_pkt = packet[IP]
     if not ip_pkt.haslayer(UDP):
         return
@@ -113,7 +115,7 @@ thread = Thread(target=httpd.serve_forever)
 thread.daemon = False
 thread.start()
 
-flt = "(dst portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d) or (src portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d)" % vars(args)
+flt = "(udp and dst portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d) or (udp and src portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d)" % vars(args)
 print("Using packet capture filter:", flt)
 print("Snooping packets on:", args.interface)
 sniff(filter=flt, iface=args.interface, prn=packet_handler)
