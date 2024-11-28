@@ -1,3 +1,4 @@
-FROM ubuntu
-RUN apt-get update && apt-get install -y python3-scapy && apt-get clean
+FROM alpine
+RUN apk add python3 scapy libpcap
+ENV PYTHONUNBUFFERED=1
 ADD rtpexporter.py /
