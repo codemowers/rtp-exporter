@@ -1,0 +1,17 @@
+version: '3.7'
+
+services:
+  rtp-exporter:
+    build:
+      context: .
+    network_mode: host
+    command:
+      - /rtpexporter.py
+      - --interface=wlp3s0
+  prometheus:
+    network_mode: "host"
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/config/prometheus.yml
+    volumes:
+      - ./config:/config:ro
