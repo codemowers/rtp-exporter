@@ -7,7 +7,22 @@ from scapy.all import sniff
 from scapy.layers.rtp import RTP
 from scapy.all import UDP, IP
 from collections import Counter
+from ipaddress import ip_address, ip_network
 from time import time
+
+parser = argparse.ArgumentParser(
+    prog='rtp-exporter',
+    description='RTP stream metrics exporter')
+parser.add_argument('--interface', default="eth0")
+parser.add_argument('--listen-address', default="0.0.0.0")
+parser.add_argument('--listen-port', type=int, default=5544)
+parser.add_argument('--rtp-port-min', type=int, default=16384)
+parser.add_argument('--rtp-port-max', type=int, default=32768)
+parser.add_argument('--ephemeral-port-min', type=int, default=32768)
+parser.add_argument('--ephemeral-port-max', type=int, default=65535)
+parser.add_argument('--payload-type', type=int, default=[96], nargs="*")
+parser.add_argument('--subnet', type=ip_network, default=[], nargs="*")
+args = parser.parse_args()
 
 markers = Counter()
 bandwidth = Counter()
@@ -36,8 +51,21 @@ def packet_handler(packet):
     if not packet.haslayer(IP):
         return
     ip_pkt = packet[IP]
+
     if not ip_pkt.haslayer(UDP):
         return
+
+    if args.subnet:
+        ip_src, ip_dst = ip_address(ip_pkt.src), ip_address(ip_pkt.dst)
+        src_excluded = dst_excluded = True
+        for subnet in args.subnet:
+            if ip_src in subnet:
+                src_valid = False
+            if ip_dst in subnet:
+                dst_valid = False
+        if src_excluded or dst_excluded:
+            return
+
     udp_pkt = ip_pkt[UDP]
 
     try:
@@ -50,12 +78,18 @@ def packet_handler(packet):
     except:
         return
 
+    if args.payload_type:
+        if rtp_pkt.payload_type not in args.payload_type:
+            return
+
     key = ip_pkt.src, udp_pkt.sport, ip_pkt.dst, udp_pkt.dport, rtp_pkt.sourcesync, rtp_pkt.payload_type
 
-    if key in seq:
-        last_seq = seq[key]
+    last_seq = seq.get(key, 0)
+    if last_seq:
         if last_seq + 1 < rtp_pkt.sequence: # at least one packet was lost
             drops[key] += rtp_pkt.sequence - last_seq - 1
+    else:
+        drops[key] = 0
 
     if rtp_pkt.marker:
         markers[key] += 1
@@ -111,18 +145,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(buf.encode("ascii"))
 
-parser = argparse.ArgumentParser(
-    prog='rtp-exporter',
-    description='RTP stream metrics exporter')
-parser.add_argument('--interface', default="eth0")
-parser.add_argument('--listen-address', default="0.0.0.0")
-parser.add_argument('--listen-port', type=int, default=5544)
-parser.add_argument('--rtp-port-min', type=int, default=16384)
-parser.add_argument('--rtp-port-max', type=int, default=32768)
-parser.add_argument('--ephemeral-port-min', type=int, default=32768)
-parser.add_argument('--ephemeral-port-max', type=int, default=65535)
-args = parser.parse_args()
-
 httpd = HTTPServer((args.listen_address, args.listen_port), Handler)
 thread = Thread(target=httpd.serve_forever)
 thread.daemon = False
@@ -131,4 +153,6 @@ thread.start()
 flt = "(udp and dst portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d) or (udp and src portrange %(rtp_port_min)d-%(rtp_port_max)d and src portrange %(ephemeral_port_min)d-%(ephemeral_port_max)d)" % vars(args)
 print("Using packet capture filter:", flt)
 print("Snooping packets on:", args.interface)
+print("Subnet filter:", args.subnet or "None")
+print("Payload filter:", args.payload_type)
 sniff(filter=flt, iface=args.interface, prn=packet_handler, store=False)
