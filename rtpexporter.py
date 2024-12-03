@@ -30,6 +30,7 @@ seq = Counter()
 drops = Counter()
 timestamp = Counter()
 
+packets_captured = 0
 garbage_collects = 0
 cycles = 0
 
@@ -47,6 +48,7 @@ def gc(now):
             timestamp.pop(key, None)
 
 def packet_handler(packet):
+    packets_captured += 1
     global cycles
     if not packet.haslayer(IP):
         return
@@ -104,6 +106,7 @@ def packet_handler(packet):
 
 def build_metrics():
     gc(time())
+    yield "rtp_exporter_packets_captured_count", "counter", packets_captured, {}
     yield "rtp_exporter_garbage_collect_count", "counter", garbage_collects, {}
     yield "rtp_exporter_stream_count", "counter", len(seq), {}
     for key, value in tuple(seq.items()):
