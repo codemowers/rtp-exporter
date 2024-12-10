@@ -8,9 +8,10 @@ services:
     command:
       - /rtpexporter.py
       - --interface=wlp3s0
+      - --rtp-port-min=100
   prometheus:
     network_mode: "host"
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.0.1
     command:
       - --config.file=/config/prometheus.yml
     volumes:
